@@ -2,6 +2,7 @@
 
 namespace OmniPHP\Http;
 
+use OmniPHP\Logger;
 use Throwable;
 use Workerman\Connection\TcpConnection;
 use Workerman\Protocols\Http\Request;
@@ -49,9 +50,15 @@ final class Kernel
             ));
             RequestLogger::end($request, $statusCode, $startTime, $connection);
         } catch (Throwable $e) {
+            // 只有没注册 ExceptionHandler、或 ExceptionHandler 自己抛了才会到这里。
             // Throwable 而非 Exception：TypeError 等 \Error 也要接住，
-            // 否则会漏到 Workerman Fiber driver 的 errorHandler → stopAll(250) 整组重启
-            $connection->send(new Response(500, self::JSON_HEADERS, json_encode(['error' => $e->getMessage()], JSON_UNESCAPED_UNICODE)));
+            // 否则会漏到 Workerman Fiber driver 的 errorHandler → stopAll(250) 整组重启。
+            // 细节只进日志，不回给客户端——调试信息由 ExceptionHandler(debug: true) 负责。
+            Logger::error('[Kernel] Unhandled ' . get_class($e) . ': ' . $e->getMessage(), [
+                'path' => $request->path(),
+                'file' => $e->getFile() . ':' . $e->getLine(),
+            ]);
+            $connection->send(new Response(500, self::JSON_HEADERS, json_encode(['error' => 'Internal Server Error'], JSON_UNESCAPED_UNICODE)));
             RequestLogger::end($request, 500, $startTime, $connection);
         }
     }
