@@ -11,7 +11,7 @@ ergonomics of a classic web framework.
 
 | Namespace | Purpose |
 |---|---|
-| `OmniPHP\Http` | `Router` (static, grouped, typed params), `Context` (request/response helper), onion `Middleware` pipeline, `Session`, `ExceptionHandler`, `ApiCode` error-code envelope, built-in CORS / rate-limit / JSON-response middlewares |
+| `OmniPHP\Http` | `Kernel` (Workerman `onMessage` entry), `Router` (static, grouped, typed params), `Context` (request/response helper), onion `Middleware` pipeline, `Session`, `ExceptionHandler`, `ApiCode` error-code envelope, built-in CORS / rate-limit / JSON-response middlewares |
 | `OmniPHP\Database` | PDO `DB` facade, fluent `QueryBuilder`, `Schema` blueprint + `MigrationRunner`, `SoftDeletes`, per-worker connection bootstrap |
 | `OmniPHP\Model` | Thin active-record style base class on top of `QueryBuilder` |
 | `OmniPHP\Queue` | Redis Stream job queue: `Producer` / `Consumer` / `RedisQueue` with priorities, delayed jobs, retries, dead-letter queue |
@@ -48,11 +48,11 @@ define('BASE_PATH', __DIR__);
 define('CONFIG_PATH', BASE_PATH . '/config');   // Config::get('app.xxx') reads config/app.php
 define('RUNTIME_PATH', BASE_PATH . '/runtime'); // logs, cache and compiled views live here
 
+use OmniPHP\Http\Kernel;
 use OmniPHP\Http\Router;
 use OmniPHP\Http\Context;
 use OmniPHP\Http\Middlewares\ResponseMiddleware;
 use Workerman\Worker;
-use Workerman\Protocols\Http\Response;
 
 Router::group('/api', function () {
     Router::get('/hello/{name}', fn(Context $ctx) => ['hello' => $ctx->param('name')]);
@@ -60,14 +60,7 @@ Router::group('/api', function () {
 
 $http = new Worker('http://0.0.0.0:8080');
 $http->count = 4;
-$http->onMessage = function ($connection, $request) {
-    $result = Router::dispatch($connection, $request);
-    if ($result instanceof Response) {
-        $connection->send($result);
-    } elseif ($result !== null) {
-        $connection->send(new Response(200, ['Content-Type' => 'application/json'], json_encode($result)));
-    }
-};
+$http->onMessage = [Kernel::class, 'handle']; // dispatch → send → access log
 
 Worker::runAll();
 ```
@@ -81,7 +74,7 @@ php server.php reload     # re-fork workers after a code change
 ## Conventions the framework expects from the application
 
 - The application defines `BASE_PATH`, `CONFIG_PATH` and `RUNTIME_PATH` before using
-  `Config`, `Logger`, `FileCache` or `ViewEngine`.
+  `Config`, `Logger`, `LogRotator`, `FileCache` or `ViewEngine`; they throw if a constant is missing.
 - `Lang::init(['lang_dir' => ...])` must be given the language directory explicitly.
 - Queue job handlers implement `OmniPHP\Queue\HandlerInterface` and are registered by job
   name in `config/queue.php` under `handlers`.

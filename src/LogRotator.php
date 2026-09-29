@@ -64,7 +64,10 @@ class LogRotator
      */
     public static function rotate(?int $keepDays = null): array
     {
-        $logDir = defined('RUNTIME_PATH') ? RUNTIME_PATH . '/logs' : __DIR__ . '/../runtime/logs';
+        if (!defined('RUNTIME_PATH')) {
+            throw new \RuntimeException('LogRotator requires the application to define RUNTIME_PATH before use');
+        }
+        $logDir = RUNTIME_PATH . '/logs';
         if (!is_dir($logDir)) {
             return ['archived' => 0, 'deleted' => 0, 'errors' => ['log dir not found: ' . $logDir]];
         }

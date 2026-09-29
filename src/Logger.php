@@ -79,9 +79,8 @@ class Logger
      */
     private static function initFileEngine(): void
     {
-        // 确保 RUNTIME_PATH 已定义
         if (!defined('RUNTIME_PATH')) {
-            define('RUNTIME_PATH', dirname(__DIR__) . '/runtime');
+            throw new \RuntimeException('Logger requires the application to define RUNTIME_PATH before use');
         }
         
         $logPath = RUNTIME_PATH . '/logs';

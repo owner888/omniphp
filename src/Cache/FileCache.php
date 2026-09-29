@@ -88,9 +88,10 @@ class FileCache
             return;
         }
         
-        self::$cacheDir = defined('RUNTIME_PATH') 
-            ? RUNTIME_PATH . '/cache/data' 
-            : sys_get_temp_dir() . '/omniphp_cache';
+        if (!defined('RUNTIME_PATH')) {
+            throw new \RuntimeException('FileCache requires the application to define RUNTIME_PATH before use');
+        }
+        self::$cacheDir = RUNTIME_PATH . '/cache/data';
         
         // 创建缓存目录
         if (!is_dir(self::$cacheDir)) {
