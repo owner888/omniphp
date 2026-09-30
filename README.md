@@ -11,6 +11,7 @@ ergonomics of a classic web framework.
 
 | Namespace | Purpose |
 |---|---|
+| `OmniPHP\Application` / `CrashHandler` | One-call bootstrap (paths, `.env`, timezone, log level, i18n) and a three-tier fatal/uncaught handler for long-running processes |
 | `OmniPHP\Http` | `Kernel` (Workerman `onMessage` entry), `Router` (static, grouped, typed params), `Context` (request/response helper), onion `Middleware` pipeline, `Session`, `ExceptionHandler`, `ApiCode` error-code envelope, built-in CORS / rate-limit / JSON-response middlewares |
 | `OmniPHP\Database` | PDO `DB` facade, fluent `QueryBuilder`, `Schema` blueprint + `MigrationRunner`, `SoftDeletes`, per-worker connection bootstrap |
 | `OmniPHP\Model` | Thin active-record style base class on top of `QueryBuilder` |
@@ -20,6 +21,9 @@ ergonomics of a classic web framework.
 | `OmniPHP\Config` / `Lang` | PHP-array config loader; `.ini` based i18n with locale fallback |
 | `OmniPHP\Logger` | Level-based logger with pluggable engines (`FileEngine`, `ElasticsearchEngine`, `TelegramEngine`) and `LogRotator` |
 | `OmniPHP\Requests` | Minimal cURL HTTP client, `requests`-style |
+
+A ready-made project layout lives in [omniphp/omniphp](https://github.com/owner888/omniphp-skeleton)
+(`composer create-project omniphp/omniphp myapp`).
 
 Everything runs inside Workerman worker processes: code is loaded once, connections are
 opened once per worker, and nothing assumes PHP-FPM's request-scoped lifecycle.
@@ -44,15 +48,15 @@ composer require omniphp/framework
 // server.php
 require __DIR__ . '/vendor/autoload.php';
 
-define('BASE_PATH', __DIR__);
-define('CONFIG_PATH', BASE_PATH . '/config');   // Config::get('app.xxx') reads config/app.php
-define('RUNTIME_PATH', BASE_PATH . '/runtime'); // logs, cache and compiled views live here
-
+use OmniPHP\Application;
 use OmniPHP\Http\Kernel;
 use OmniPHP\Http\Router;
 use OmniPHP\Http\Context;
 use OmniPHP\Http\Middlewares\ResponseMiddleware;
 use Workerman\Worker;
+
+Application::boot(__DIR__);        // BASE_PATH / CONFIG_PATH / RUNTIME_PATH, .env, timezone, log level, crash handler
+Application::workerman('server');  // pid/log/stdout under runtime/, Fiber event loop
 
 Router::group('/api', function () {
     Router::get('/hello/{name}', fn(Context $ctx) => ['hello' => $ctx->param('name')]);
@@ -73,9 +77,11 @@ php server.php reload     # re-fork workers after a code change
 
 ## Conventions the framework expects from the application
 
-- The application defines `BASE_PATH`, `CONFIG_PATH` and `RUNTIME_PATH` before using
-  `Config`, `Logger`, `LogRotator`, `FileCache` or `ViewEngine`; they throw if a constant is missing.
-- `Lang::init(['lang_dir' => ...])` must be given the language directory explicitly.
+- `Application::boot($basePath)` runs first in every entry point; it defines `BASE_PATH`,
+  `CONFIG_PATH` and `RUNTIME_PATH`, which `Config`, `Logger`, `LogRotator`, `FileCache` and
+  `ViewEngine` require (they throw if a constant is missing).
+- `Lang::init(['lang_dir' => ...])` must be given the language directory explicitly (pass it as
+  `boot()`'s `lang` option).
 - Queue job handlers implement `OmniPHP\Queue\HandlerInterface` and are registered by job
   name in `config/queue.php` under `handlers`.
 - Application-level hooks are registered at bootstrap rather than discovered:
