@@ -40,49 +40,49 @@ class Router
     /**
      * 注册 GET 路由
      */
-    public static function get(string $path, callable|array $handler): void
+    public static function get(string $path, callable|array $handler, array $middlewares = []): void
     {
-        self::addRoute('GET', $path, $handler);
+        self::addRoute('GET', $path, $handler, $middlewares);
     }
     
     /**
      * 注册 POST 路由
      */
-    public static function post(string $path, callable|array $handler): void
+    public static function post(string $path, callable|array $handler, array $middlewares = []): void
     {
-        self::addRoute('POST', $path, $handler);
+        self::addRoute('POST', $path, $handler, $middlewares);
     }
     
     /**
      * 注册 PUT 路由
      */
-    public static function put(string $path, callable|array $handler): void
+    public static function put(string $path, callable|array $handler, array $middlewares = []): void
     {
-        self::addRoute('PUT', $path, $handler);
+        self::addRoute('PUT', $path, $handler, $middlewares);
     }
     
     /**
      * 注册 DELETE 路由
      */
-    public static function delete(string $path, callable|array $handler): void
+    public static function delete(string $path, callable|array $handler, array $middlewares = []): void
     {
-        self::addRoute('DELETE', $path, $handler);
+        self::addRoute('DELETE', $path, $handler, $middlewares);
     }
     
     /**
      * 注册 PATCH 路由
      */
-    public static function patch(string $path, callable|array $handler): void
+    public static function patch(string $path, callable|array $handler, array $middlewares = []): void
     {
-        self::addRoute('PATCH', $path, $handler);
+        self::addRoute('PATCH', $path, $handler, $middlewares);
     }
     
     /**
      * 注册任意方法路由
      */
-    public static function any(string $path, callable|array $handler): void
+    public static function any(string $path, callable|array $handler, array $middlewares = []): void
     {
-        self::addRoute('*', $path, $handler);
+        self::addRoute('*', $path, $handler, $middlewares);
     }
     
     /**
@@ -124,7 +124,7 @@ class Router
     /**
      * 添加路由
      */
-    private static function addRoute(string $method, string $path, callable|array $handler): void
+    private static function addRoute(string $method, string $path, callable|array $handler, array $routeMiddlewares = []): void
     {
         $fullPath = implode('', self::$groups) . $path;
         
@@ -155,11 +155,12 @@ class Router
         // 转换为完整的正则表达式
         $pattern = '#^' . $pattern . '$#';
         
-        // 收集当前组的所有中间件
+        // 收集中间件：组级（外层在前）→ 路由级；全局中间件在 dispatch 时再拼到最前
         $middlewares = [];
         foreach (self::$groupMiddlewares as $groupMiddleware) {
             $middlewares = array_merge($middlewares, $groupMiddleware);
         }
+        $middlewares = array_merge($middlewares, $routeMiddlewares);
         
         self::$routes[] = [
             'method' => $method,
