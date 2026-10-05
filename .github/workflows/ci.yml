@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php: ['8.4']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: curl, json, mbstring, pdo, pdo_sqlite, redis
+          coverage: none
+
+      - name: Validate composer.json
+        run: composer validate --strict
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Lint
+        run: find src tests -name '*.php' -print0 | xargs -0 -n1 -P4 php -l > /dev/null
+
+      - name: PHPUnit
+        run: vendor/bin/phpunit

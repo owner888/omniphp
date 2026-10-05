@@ -267,5 +267,6 @@ class Lang
         self::$loadedFiles = [];
         self::$initialized = false;
         self::$locale = 'en';
+        self::$alwaysLoad = [];
     }
 }

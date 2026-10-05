@@ -3,7 +3,17 @@
     "description": "OmniPHP — The universal PHP framework. Lightweight, Workerman-based: HTTP router & middleware, query builder & migrations, Redis Stream queue, template engine, cache, i18n and structured logging.",
     "type": "library",
     "license": "MIT",
-    "keywords": ["framework", "workerman", "async", "http", "router", "queue", "redis", "orm", "template"],
+    "keywords": [
+        "framework",
+        "workerman",
+        "async",
+        "http",
+        "router",
+        "queue",
+        "redis",
+        "orm",
+        "template"
+    ],
     "homepage": "https://github.com/owner888/omniphp",
     "authors": [
         {
@@ -23,6 +33,9 @@
         "ext-pdo": "*",
         "workerman/workerman": "^5.1"
     },
+    "require-dev": {
+        "phpunit/phpunit": "^11.5"
+    },
     "suggest": {
         "ext-redis": "Required for the Redis cache driver, the Redis Stream queue and the rate-limit middleware"
     },
@@ -30,6 +43,14 @@
         "psr-4": {
             "OmniPHP\\": "src/"
         }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "OmniPHP\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "phpunit"
     },
     "config": {
         "sort-packages": true,

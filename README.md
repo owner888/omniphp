@@ -88,6 +88,15 @@ php server.php reload     # re-fork workers after a code change
   `Logger::registerEngine()` for extra log sinks, `RedisQueue::setDlqListener()` for
   dead-letter notifications, `Router::setExceptionHandler()` for error rendering.
 
+## Development
+
+```bash
+composer install
+vendor/bin/phpunit        # Router / QueryBuilder (SQL only, in-memory SQLite) / Lang
+```
+
+CI runs `composer validate`, `php -l` and PHPUnit on PHP 8.4 for every push and tag.
+
 ## License
 
 MIT — see [LICENSE](LICENSE). Query builder guide: [docs/database.md](docs/database.md).

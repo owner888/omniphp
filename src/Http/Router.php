@@ -345,6 +345,9 @@ class Router
     {
         self::$routes = [];
         self::$groups = [];
+        self::$middlewares = [];
+        self::$groupMiddlewares = [];
+        self::$exceptionHandler = null;
     }
     
     /**
