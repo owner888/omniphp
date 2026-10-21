@@ -20,10 +20,10 @@ use OmniPHP\Config;
 
 class Redis
 {
-    private static ?\Redis $redis = null;
-    private static bool $connected = false;
-    private static int $maxRetries = 3; // 最大重试次数
-    private static int $retryDelay = 100000; // 初始重试延迟（微秒，100ms）
+    protected static ?\Redis $redis = null;
+    protected static bool $connected = false;
+    protected static int $maxRetries = 3; // 最大重试次数
+    protected static int $retryDelay = 100000; // 初始重试延迟（微秒，100ms）
     
     /**
      * 初始化连接

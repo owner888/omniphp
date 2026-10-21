@@ -14,23 +14,23 @@ use OmniPHP\Logger;
 
 class DB
 {
-    private static ?PDO $pdo = null;
-    private static array $config = [];
+    protected static ?PDO $pdo = null;
+    protected static array $config = [];
     
     /** @var bool 是否在事务中 */
-    private static bool $inTransaction = false;
+    protected static bool $inTransaction = false;
     
     /** @var bool 是否启用查询日志 */
-    private static bool $logging = false;
+    protected static bool $logging = false;
     
     /** @var array 查询日志 */
-    private static array $queryLog = [];
+    protected static array $queryLog = [];
     
     /** @var float 慢查询阈值（秒），超过则记录警告日志。默认 1 秒 */
-    private static float $slowThreshold = 1.0;
+    protected static float $slowThreshold = 1.0;
     
     /** @var int 查询日志最大条数（防止内存泄漏） */
-    private static int $maxLogSize = 1000;
+    protected static int $maxLogSize = 1000;
     
     /**
      * 初始化数据库连接 (支持直接传入 PDO 实例或配置数组)
