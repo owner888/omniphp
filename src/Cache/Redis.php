@@ -28,7 +28,12 @@ class Redis
     /**
      * 初始化连接
      */
-    public static function init(): void
+    /**
+     * 初始化 Redis 连接 (支持直接传入配置数组或从全局 Config 读取)
+     *
+     * @param array<string, mixed> $config
+     */
+    public static function init(array $config = []): void
     {
         if (self::$redis !== null && self::$connected) {
             return;
@@ -37,19 +42,17 @@ class Redis
         // 检查 Redis 扩展
         if (!extension_loaded('redis')) {
             Logger::warning("PHP Redis 扩展未安装，无法使用同步 Redis");
-            echo "⚠️  PHP Redis 扩展未安装\n";
-            echo "   安装方法: pecl install redis\n";
-            echo "   或使用异步 Redis（功能受限）\n\n";
             return;
         }
         
         try {
-            // 从配置读取 Redis 连接信息
-            $host = Config::get('cache.redis.host', '127.0.0.1');
-            $port = Config::get('cache.redis.port', 6379);
-            $password = Config::get('cache.redis.password', '');
-            $database = Config::get('cache.redis.database', 0);
-            $timeout = Config::get('cache.redis.timeout', 5);
+            // 优先使用传入配置，其次从全局配置读取
+            $host = $config['host'] ?? Config::get('cache.redis.host', '127.0.0.1');
+            $port = (int)($config['port'] ?? Config::get('cache.redis.port', 6379));
+            $password = (string)($config['password'] ?? Config::get('cache.redis.password', ''));
+            $database = (int)($config['database'] ?? Config::get('cache.redis.database', 0));
+            $timeout = (float)($config['timeout'] ?? Config::get('cache.redis.timeout', 5));
+            $prefix = (string)($config['prefix'] ?? '');
             
             self::$redis = new \Redis();
             
@@ -66,16 +69,24 @@ class Redis
             }
             
             // 认证（如果有密码）
-            if ($password) {
+            if ($password !== '') {
                 $authResult = self::$redis->auth($password);
                 if (!$authResult) {
                     self::$connected = false;
-                    Logger::error("Redis 密码认证失败，请检查 REDIS_PASSWORD 配置", [
+                    Logger::error("Redis 密码认证失败，请检查密码配置", [
                         'host' => $host,
                         'port' => $port,
                     ]);
                     return;
                 }
+            }
+
+            if ($database > 0) {
+                self::$redis->select($database);
+            }
+
+            if ($prefix !== '') {
+                self::$redis->setOption(\Redis::OPT_PREFIX, $prefix);
             }
             
             // 选择数据库
@@ -287,6 +298,29 @@ class Redis
             'DELETE',
             ['key' => $key]
         ) ?? false;
+    }
+
+    public static function del(string ...$keys): int
+    {
+        return (int)self::executeWithRetry(
+            fn() => self::$redis->del(...$keys),
+            'DEL',
+            ['keys' => $keys]
+        );
+    }
+
+    public static function getJson(string $key): mixed
+    {
+        $val = self::get($key);
+        if ($val === null || $val === false) {
+            return null;
+        }
+        return is_array($val) ? $val : json_decode((string)$val, true);
+    }
+
+    public static function setJson(string $key, mixed $value, int $ttl = 86400): bool
+    {
+        return self::set($key, $value, $ttl);
     }
     
     /**

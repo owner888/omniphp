@@ -33,16 +33,41 @@ class DB
     private static int $maxLogSize = 1000;
     
     /**
-     * 初始化数据库连接
+     * 初始化数据库连接 (支持直接传入 PDO 实例或配置数组)
      */
-    public static function init(PDO $pdo, array $config = []): void
+    public static function init(PDO|array $pdoOrConfig, array $config = []): void
     {
-        self::$pdo = $pdo;
+        if ($pdoOrConfig instanceof PDO) {
+            self::$pdo = $pdoOrConfig;
+            self::$config = $config;
+        } else {
+            self::$config = $pdoOrConfig;
+            $driver = self::$config['driver'] ?? 'mysql';
+
+            if ($driver === 'sqlite') {
+                $dsn = 'sqlite:' . (self::$config['database'] ?? ':memory:');
+                $pdo = new PDO($dsn, null, null, self::$config['options'] ?? []);
+            } else {
+                $dsn = sprintf(
+                    '%s:host=%s;port=%d;dbname=%s;charset=%s',
+                    $driver,
+                    self::$config['host'] ?? '127.0.0.1',
+                    self::$config['port'] ?? 3306,
+                    self::$config['database'] ?? '',
+                    self::$config['charset'] ?? 'utf8mb4'
+                );
+                $pdo = new PDO(
+                    $dsn,
+                    self::$config['username'] ?? 'root',
+                    self::$config['password'] ?? '',
+                    self::$config['options'] ?? []
+                );
+            }
+            self::$pdo = $pdo;
+        }
+
         self::$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         self::$pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
-        
-        // 保存配置用于重连
-        self::$config = $config;
     }
     
     /**
@@ -232,11 +257,13 @@ class DB
     }
     
     /**
-     * 创建查询构建器
+     * 创建查询构建器 (自动附加表前缀)
      */
     public static function table(string $table): QueryBuilder
     {
-        return new QueryBuilder(self::connection(), $table);
+        $prefix = self::$config['prefix'] ?? '';
+        $fullTable = ($prefix !== '' && !str_starts_with($table, $prefix)) ? $prefix . $table : $table;
+        return new QueryBuilder(self::connection(), $fullTable);
     }
     
     /**
