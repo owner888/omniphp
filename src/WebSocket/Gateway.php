@@ -14,6 +14,47 @@ use Workerman\Worker;
 class Gateway
 {
     private static ?int $sweepTimerId = null;
+    /** @var class-string<Context>|null 自定义 WebSocket Context 类名 */
+    private static ?string $contextClass = null;
+    /** @var (callable(TcpConnection, string): Context)|null 自定义 WebSocket Context 工厂 */
+    private static mixed $contextFactory = null;
+
+    /**
+     * 设置自定义 WebSocket Context 类 (必须继承自 OmniPHP\WebSocket\Context)
+     *
+     * @param class-string<Context> $className
+     */
+    public static function setContextClass(string $className): void
+    {
+        if (!is_subclass_of($className, Context::class)) {
+            throw new \InvalidArgumentException("WebSocket Context class '{$className}' must extend " . Context::class);
+        }
+        self::$contextClass = $className;
+    }
+
+    /**
+     * 设置自定义 WebSocket Context 构造工厂闭包
+     *
+     * @param callable(TcpConnection, string): Context $factory
+     */
+    public static function setContextFactory(callable $factory): void
+    {
+        self::$contextFactory = $factory;
+    }
+
+    /**
+     * 实例化 WebSocket Context 上下文
+     */
+    public static function createContext(TcpConnection $connection, string $data): Context
+    {
+        if (self::$contextFactory !== null) {
+            return (self::$contextFactory)($connection, $data);
+        }
+        if (self::$contextClass !== null) {
+            return new self::$contextClass($connection, $data);
+        }
+        return new Context($connection, $data);
+    }
 
     /**
      * 将通用网关绑定到指定的 Workerman Worker 实例
@@ -47,7 +88,7 @@ class Gateway
 
         $worker->onMessage = static function (TcpConnection $connection, string $data) use ($messageHandler): void {
             Broadcaster::touch($connection);
-            $ctx = new Context($connection, $data);
+            $ctx = self::createContext($connection, $data);
             $messageHandler($ctx);
         };
     }

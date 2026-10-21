@@ -23,6 +23,10 @@ class Router
     private static array $staticRoutes = [];
     private static array $staticFiles = [];
     private static ?ExceptionHandler $exceptionHandler = null;
+    /** @var class-string<Context>|null 自定义 Context 类名 */
+    private static ?string $contextClass = null;
+    /** @var (callable(TcpConnection, Request, array): Context)|null 自定义 Context 工厂 */
+    private static mixed $contextFactory = null;
     
     /**
      * 参数类型验证规则
@@ -85,6 +89,45 @@ class Router
     public static function any(string $path, callable|array $handler, array $middlewares = []): void
     {
         self::addRoute('*', $path, $handler, $middlewares);
+    }
+
+    /**
+     * 设置自定义 HTTP Context 类 (必须继承自 OmniPHP\Http\Context)
+     *
+     * @param class-string<Context> $className
+     */
+    public static function setContextClass(string $className): void
+    {
+        if (!is_subclass_of($className, Context::class)) {
+            throw new \InvalidArgumentException("Context class '{$className}' must extend " . Context::class);
+        }
+        self::$contextClass = $className;
+    }
+
+    /**
+     * 设置自定义 HTTP Context 构造工厂闭包
+     *
+     * @param callable(TcpConnection, Request, array): Context $factory
+     */
+    public static function setContextFactory(callable $factory): void
+    {
+        self::$contextFactory = $factory;
+    }
+
+    /**
+     * 实例化 Context 上下文
+     *
+     * @param array<string, mixed> $params
+     */
+    public static function createContext(TcpConnection $connection, Request $request, array $params = []): Context
+    {
+        if (self::$contextFactory !== null) {
+            return (self::$contextFactory)($connection, $request, $params);
+        }
+        if (self::$contextClass !== null) {
+            return new self::$contextClass($connection, $request, $params);
+        }
+        return new Context($connection, $request, $params);
     }
 
     /**
@@ -259,8 +302,8 @@ class Router
                     $params[$paramName] = $value;
                 }
                 
-                // 创建 Context
-                $ctx = new Context($connection, $request, $params);
+                // 创建 Context (支持自定义子类与工厂扩展)
+                $ctx = self::createContext($connection, $request, $params);
                 
                 // 合并全局中间件和路由中间件
                 $middlewares = array_merge(self::$middlewares, $route['middlewares'] ?? []);
@@ -394,6 +437,8 @@ class Router
         self::$groupMiddlewares = [];
         self::$staticRoutes = [];
         self::$staticFiles = [];
+        self::$contextClass = null;
+        self::$contextFactory = null;
         self::$exceptionHandler = null;
     }
     

@@ -34,6 +34,15 @@ final class ArchitectureGuardTest extends TestCase
         ArchitectureGuard::verify($this->tempDir);
     }
 
+    public function testAllowsLegitimateSubclassExtension(): void
+    {
+        // 当用户编写的 Context 正规继承了 OmniPHP\Http\Context 时，架构守卫应当允许并放行！
+        file_put_contents($this->tempDir . '/src/Context.php', '<?php namespace App; class Context extends \OmniPHP\Http\Context {}');
+
+        $this->expectNotToPerformAssertions();
+        ArchitectureGuard::verify($this->tempDir);
+    }
+
     public function testPassesWhenClean(): void
     {
         $this->expectNotToPerformAssertions();

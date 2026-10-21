@@ -5,7 +5,18 @@ declare(strict_types=1);
 namespace OmniPHP\Tests\Http;
 
 use OmniPHP\Http\Context;
+use OmniPHP\Http\Router;
 use PHPUnit\Framework\TestCase;
+use Workerman\Connection\TcpConnection;
+use Workerman\Protocols\Http\Request;
+
+class CustomGameContext extends Context
+{
+    public function customPlayerId(): int
+    {
+        return 777;
+    }
+}
 
 final class ContextTest extends TestCase
 {
@@ -30,5 +41,26 @@ final class ContextTest extends TestCase
         $this->assertSame('login', $ctx->post('action'));
         $this->assertSame('abc', $ctx->input('token'));
         $this->assertSame('POST', $ctx->method());
+    }
+
+    public function testRouterCustomContextClassInjection(): void
+    {
+        Router::clear();
+        Router::setContextClass(CustomGameContext::class);
+
+        $invokedContext = null;
+        Router::get('/game/profile', function (CustomGameContext $ctx) use (&$invokedContext) {
+            $invokedContext = $ctx;
+            return ['player' => $ctx->customPlayerId()];
+        });
+
+        $mockConn = (new \ReflectionClass(TcpConnection::class))->newInstanceWithoutConstructor();
+        $req = new Request("GET /game/profile HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n");
+        $res = Router::dispatch($mockConn, $req);
+
+        $this->assertSame(['player' => 777], $res);
+        $this->assertInstanceOf(CustomGameContext::class, $invokedContext);
+        $this->assertSame(777, $invokedContext->customPlayerId());
+        Router::clear();
     }
 }
