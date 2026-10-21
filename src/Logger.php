@@ -80,7 +80,8 @@ class Logger
     private static function initFileEngine(): void
     {
         if (!defined('RUNTIME_PATH')) {
-            throw new \RuntimeException('Logger requires the application to define RUNTIME_PATH before use');
+            $runtime = defined('BASE_PATH') ? BASE_PATH . '/runtime' : sys_get_temp_dir() . '/omniphp/runtime';
+            define('RUNTIME_PATH', $runtime);
         }
         
         $logPath = RUNTIME_PATH . '/logs';
