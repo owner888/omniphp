@@ -43,4 +43,22 @@ final class ActionDispatcherTest extends TestCase
 
         $this->assertSame(['fallback' => true], $result);
     }
+
+    public function testAutoFallbackModeWithLoggerWarning(): void
+    {
+        $middleware = new ActionDispatcherMiddleware(
+            handlers: ['user' => FakeUserHandler::class],
+            autoFallback: true
+        );
+
+        // 访问未覆盖的接口 c=blackmarket&m=index
+        $ctx = Context::mock(['c' => 'blackmarket', 'm' => 'index', 'uid' => 9999]);
+        $result = $middleware->handle($ctx, fn($c) => ['fallback' => false]);
+
+        $this->assertIsArray($result);
+        $this->assertSame(1, $result['status']);
+        $this->assertSame(1, $result['is_fallback']);
+        $this->assertSame('blackmarket', $result['controller']);
+        $this->assertSame('index', $result['method']);
+    }
 }

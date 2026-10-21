@@ -6,12 +6,13 @@ namespace OmniPHP\Http\Middlewares;
 
 use OmniPHP\Http\Context;
 use OmniPHP\Http\Middleware;
+use OmniPHP\Logger;
 
 /**
  * 存量系统与游戏协议动作分发中间件 (RPC / Action Dispatcher)
  *
  * 智能将 `?c={controller}&m={method}` (或自定义参数名) 请求动态路由至对应的无状态静态 Handler 动作。
- * 若请求未包含指定参数，则透明放行至下游常规 RESTful 路由管道。
+ * 支持 autoFallback 智能降级模式，遇到未实现接口时自动记录 Logger::warning 并下发平滑兼容信封。
  */
 final class ActionDispatcherMiddleware implements Middleware
 {
@@ -19,11 +20,13 @@ final class ActionDispatcherMiddleware implements Middleware
      * @param array<string, class-string> $handlers 控制器映射表
      * @param string $controllerParam 控制器参数名 (默认 'c')
      * @param string $methodParam 方法参数名 (默认 'm')
+     * @param bool $autoFallback 是否启用未实现接口自动平滑降级并告警 (默认 false)
      */
     public function __construct(
         private readonly array $handlers = [],
         private readonly string $controllerParam = 'c',
-        private readonly string $methodParam = 'm'
+        private readonly string $methodParam = 'm',
+        private readonly bool $autoFallback = false
     ) {
     }
 
@@ -39,21 +42,34 @@ final class ActionDispatcherMiddleware implements Middleware
         $c = strtolower(trim($c));
         $m = strtolower(trim($m));
 
-        if (!isset($this->handlers[$c])) {
+        $missing = !isset($this->handlers[$c]) || !method_exists($this->handlers[$c], $m);
+
+        if ($missing) {
+            if ($this->autoFallback) {
+                Logger::warning("[ActionDispatcher] 命中未覆盖接口: {$c}.{$m}", [
+                    'controller' => $c,
+                    'method' => $m,
+                    'params' => $ctx->all(),
+                ]);
+
+                return [
+                    'status' => 1,
+                    'is_fallback' => 1,
+                    'controller' => $c,
+                    'method' => $m,
+                    'message' => "功能 [{$c}.{$m}] 正在筹备中，敬请期待！",
+                    'list' => [],
+                    'info' => [],
+                ];
+            }
+
             return [
                 'status' => -404,
-                'message' => "未找到指定的模块处理器 [{$c}]",
+                'message' => "未找到指定的模块动作 [{$c}.{$m}]",
             ];
         }
 
         $class = $this->handlers[$c];
-        if (!method_exists($class, $m)) {
-            return [
-                'status' => -404,
-                'message' => "模块 [{$c}] 中不存在执行动作 [{$m}]",
-            ];
-        }
-
         return $class::$m($ctx);
     }
 }
