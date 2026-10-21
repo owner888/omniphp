@@ -11,7 +11,7 @@ use Workerman\Worker;
 /**
  * 通用 WebSocket 服务网关与协议驱动器
  */
-final class Gateway
+class Gateway
 {
     private static ?int $sweepTimerId = null;
 

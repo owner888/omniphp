@@ -11,7 +11,7 @@ use Workerman\Connection\TcpConnection;
  *
  * 管理当前 Worker 进程内的活跃连接、UID 路由映射、以及心跳超时僵尸连接的主动回收清理。
  */
-final class Broadcaster
+class Broadcaster
 {
     public const int DEFAULT_HEARTBEAT_TIMEOUT = 60; // 默认 60 秒无心跳判定为僵尸死连接
 
