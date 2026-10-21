@@ -1267,9 +1267,9 @@ class QueryBuilder
     }
     
     /**
-     * 插入数据
+     * 插入数据 (成功时返回自增 ID 或 true)
      */
-    public function insert(array $data): bool
+    public function insert(array $data): int|bool
     {
         return $this->executeQuery(function() use ($data) {
             $columns = implode(', ', array_map(fn($col) => $this->escapeId($col), array_keys($data)));
@@ -1279,7 +1279,12 @@ class QueryBuilder
             $this->lastExecutedSql = $sql;
             
             $stmt = $this->pdo->prepare($sql);
-            return $stmt->execute(array_values($data));
+            $res = $stmt->execute(array_values($data));
+            if (!$res) {
+                return false;
+            }
+            $lastId = $this->pdo->lastInsertId();
+            return ($lastId && is_numeric($lastId) && (int)$lastId > 0) ? (int)$lastId : true;
         });
     }
     
