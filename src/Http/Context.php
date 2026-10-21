@@ -28,6 +28,39 @@ class Context
         $this->request = $request;
         $this->params = $params;
     }
+
+    /**
+     * 极速单元测试 / 纯内存 Mock 实例
+     *
+     * @param array<string, mixed> $inputs
+     * @param array<string, string> $headers
+     */
+    public static function mock(array $inputs = [], array $headers = [], string $method = 'GET', string $path = '/'): static
+    {
+        $fakeConnection = new class extends TcpConnection {
+            public function __construct() {}
+            public function send(mixed $data = null, bool $raw = false): bool { return true; }
+            public function close(mixed $data = null, bool $raw = false): void {}
+        };
+
+        $upperMethod = strtoupper($method);
+        $queryString = !empty($inputs) && $upperMethod === 'GET' ? '?' . http_build_query($inputs) : '';
+        $body = !empty($inputs) && $upperMethod === 'POST' ? http_build_query($inputs) : '';
+
+        $headerLines = "Host: 127.0.0.1:8080\r\n";
+        if ($upperMethod === 'POST' && $body !== '') {
+            $headerLines .= "Content-Type: application/x-www-form-urlencoded\r\n";
+            $headerLines .= "Content-Length: " . strlen($body) . "\r\n";
+        }
+        foreach ($headers as $k => $v) {
+            $headerLines .= "{$k}: {$v}\r\n";
+        }
+
+        $rawBuffer = "{$upperMethod} {$path}{$queryString} HTTP/1.1\r\n{$headerLines}\r\n{$body}";
+        $fakeRequest = new Request($rawBuffer);
+
+        return new static($fakeConnection, $fakeRequest);
+    }
     
     // ===================================
     // 请求参数访问
