@@ -24,14 +24,16 @@ class Config
             return;
         }
 
-        $configPath = CONFIG_PATH;
+        $configPath = defined('CONFIG_PATH') ? CONFIG_PATH : (defined('BASE_PATH') ? BASE_PATH . '/config' : getcwd() . '/config');
         
         // 自动扫描 config 目录下所有 .php 文件
-        $files = glob($configPath . '/*.php');
+        $files = is_dir($configPath) ? glob($configPath . '/*.php') : [];
         
-        foreach ($files as $file) {
-            $key = basename($file, '.php');
-            self::$config[$key] = require $file;
+        if (is_array($files)) {
+            foreach ($files as $file) {
+                $key = basename($file, '.php');
+                self::$config[$key] = require $file;
+            }
         }
 
         self::$loaded = true;

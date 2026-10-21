@@ -47,11 +47,11 @@ class Redis
         
         try {
             // 优先使用传入配置，其次从全局配置读取
-            $host = $config['host'] ?? Config::get('cache.redis.host', '127.0.0.1');
-            $port = (int)($config['port'] ?? Config::get('cache.redis.port', 6379));
-            $password = (string)($config['password'] ?? Config::get('cache.redis.password', ''));
-            $database = (int)($config['database'] ?? Config::get('cache.redis.database', 0));
-            $timeout = (float)($config['timeout'] ?? Config::get('cache.redis.timeout', 5));
+            $host = $config['host'] ?? (class_exists(Config::class) ? Config::get('cache.redis.host', '127.0.0.1') : '127.0.0.1');
+            $port = (int)($config['port'] ?? (class_exists(Config::class) ? Config::get('cache.redis.port', 6379) : 6379));
+            $password = (string)($config['password'] ?? (class_exists(Config::class) ? Config::get('cache.redis.password', '') : ''));
+            $database = (int)($config['database'] ?? (class_exists(Config::class) ? Config::get('cache.redis.database', 0) : 0));
+            $timeout = (float)($config['timeout'] ?? (class_exists(Config::class) ? Config::get('cache.redis.timeout', 5) : 5));
             $prefix = (string)($config['prefix'] ?? '');
             
             self::$redis = new \Redis();
