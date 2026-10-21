@@ -56,6 +56,9 @@ final class Application
         if ($options['crash_handler'] ?? true) {
             CrashHandler::install();
         }
+
+        // 强制架构铁律巡检：杜绝业务项目私造 Context / DB / Redis
+        ArchitectureGuard::verify($basePath, $options);
     }
 
     /**

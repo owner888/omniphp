@@ -20,6 +20,8 @@ class Router
     private static array $groups = [];
     private static array $middlewares = [];
     private static array $groupMiddlewares = [];
+    private static array $staticRoutes = [];
+    private static array $staticFiles = [];
     private static ?ExceptionHandler $exceptionHandler = null;
     
     /**
@@ -83,6 +85,33 @@ class Router
     public static function any(string $path, callable|array $handler, array $middlewares = []): void
     {
         self::addRoute('*', $path, $handler, $middlewares);
+    }
+
+    /**
+     * 托管静态资源目录 (对标 Go Gin 的 r.Static("/static", "./public/static"))
+     *
+     * @param array{index?: string, spaFallback?: bool, cacheControl?: string, etag?: bool} $options
+     */
+    public static function static(string $prefix, string $dir, array $options = []): void
+    {
+        self::$staticRoutes[] = [
+            'prefix' => $prefix,
+            'dir' => $dir,
+            'options' => $options,
+        ];
+    }
+
+    /**
+     * 托管单个静态文件 (对标 Go Gin 的 r.StaticFile("/favicon.ico", "./public/favicon.ico"))
+     *
+     * @param array{cacheControl?: string, etag?: bool} $options
+     */
+    public static function staticFile(string $path, string $filepath, array $options = []): void
+    {
+        self::$staticFiles[$path] = [
+            'filepath' => $filepath,
+            'options' => $options,
+        ];
     }
     
     /**
@@ -186,6 +215,21 @@ class Router
         // 安全检查：防止路径遍历攻击
         if (self::containsPathTraversal($path)) {
             return ['error' => 'Invalid path', 'message' => 'Path traversal detected'];
+        }
+
+        // 1. 静态单文件快速匹配
+        if (isset(self::$staticFiles[$path])) {
+            $f = self::$staticFiles[$path];
+            if (StaticServer::serveFile($connection, $request, $f['filepath'], $f['options'])) {
+                return null;
+            }
+        }
+
+        // 2. 静态目录匹配 (如 /static)
+        foreach (self::$staticRoutes as $st) {
+            if (StaticServer::serve($connection, $request, $st['prefix'], $st['dir'], $st['options'])) {
+                return null;
+            }
         }
         
         foreach (self::$routes as $route) {
@@ -348,6 +392,8 @@ class Router
         self::$groups = [];
         self::$middlewares = [];
         self::$groupMiddlewares = [];
+        self::$staticRoutes = [];
+        self::$staticFiles = [];
         self::$exceptionHandler = null;
     }
     
