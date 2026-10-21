@@ -181,6 +181,14 @@ class Context
         }
         return $this->request->header($key, $default);
     }
+
+    /**
+     * 获取请求 Host
+     */
+    public function host(): string
+    {
+        return (string)($this->header('host') ?? '127.0.0.1');
+    }
     
     /**
      * 获取请求方法
