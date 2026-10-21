@@ -11,7 +11,7 @@ ergonomics of a classic web framework.
 
 | Namespace | Purpose |
 |---|---|
-| `OmniPHP\Application` / `CrashHandler` | One-call bootstrap (paths, `.env`, timezone, log level, i18n) and a three-tier fatal/uncaught handler for long-running processes |
+| `OmniPHP\Application` / `CrashHandler` / `ArchitectureGuard` | One-call bootstrap (paths, `.env`, timezone, log level, i18n), three-tier fatal crash handler, and architectural lint guard |
 | `OmniPHP\Http` | `Kernel` (Workerman `onMessage` entry), `Router` (static, grouped, typed params), `Context` (request/response helper), onion `Middleware` pipeline, `Session`, `ExceptionHandler`, `ApiCode` error-code envelope, built-in CORS / rate-limit / JSON-response middlewares |
 | `OmniPHP\WebSocket` | Full-duplex `Context` (RFC 6455 protocol-level ping/pong, payload parsing, emit/error, broadcast), `Broadcaster` (connection pool, broadcast, sendToUid, zombie sweep), `Gateway` |
 | `OmniPHP\Database` | PDO `DB` facade, fluent `QueryBuilder`, `Schema` blueprint + `MigrationRunner`, `SoftDeletes`, per-worker connection bootstrap |
