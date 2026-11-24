@@ -1194,64 +1194,100 @@ class QueryBuilder
      * @param int $batchSize 每批条数
      * @return int 影响行数
      */
+    /**
+     * 单行或批量 Upsert（跨 MySQL / SQLite / PostgreSQL 兼容）
+     *
+     * $update 支持混合写法：
+     *   - 整数键列名：`'reason'` → 用本次新值覆盖（`VALUES(reason)` / `excluded.reason`）
+     *   - 关联键 + UpsertValue：`['total_count' => DB::upsertIncrement(), 'first_seen_at' => DB::upsertMin()]`
+     *   - 关联键 + RawExpression：`['pts' => DB::raw('pts + ?', [1])]`
+     *   - 关联键 + 标量常量：`['status' => 'active']`
+     */
+    public function upsert(array $values, string|array $uniqueColumns, array $update = []): int
+    {
+        if (empty($values)) {
+            return 0;
+        }
+        $rows = array_is_list($values) ? $values : [$values];
+        return $this->upsertBatch($rows, $uniqueColumns, $update);
+    }
+
     public function upsertBatch(array $rows, string|array $uniqueColumns, array $updateColumns = [], int $batchSize = 500): int
     {
         if (empty($rows)) {
             return 0;
         }
-        
+
         $uniqueColumns = is_array($uniqueColumns) ? $uniqueColumns : [$uniqueColumns];
         $columns = array_keys($rows[0]);
-        
+
         // 如果没指定更新列，则更新除唯一键外的所有列
         if (empty($updateColumns)) {
-            $updateColumns = array_diff($columns, $uniqueColumns);
+            $updateColumns = array_values(array_diff($columns, $uniqueColumns));
         }
-        
+
         $pdo = $this->pdo;
         $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
-        
+
         $totalAffected = 0;
         $batches = array_chunk($rows, $batchSize);
-        
+
         foreach ($batches as $batch) {
             $totalAffected += $this->executeQuery(function() use ($batch, $columns, $uniqueColumns, $updateColumns, $driver) {
                 $escapedColumns = implode(', ', array_map(fn($c) => $this->escapeId($c), $columns));
                 $placeholderRow = '(' . implode(', ', array_fill(0, count($columns), '?')) . ')';
                 $placeholders = implode(', ', array_fill(0, count($batch), $placeholderRow));
-                
-                // 构建 ON CONFLICT / ON DUPLICATE KEY 子句
-                $updateSets = implode(', ', array_map(function($col) use ($driver) {
-                    $escaped = $this->escapeId($col);
-                    if ($driver === 'sqlite') {
-                        return "{$escaped} = excluded.{$escaped}";
+
+                $setParts = [];
+                $updateBindings = [];
+                foreach ($updateColumns as $k => $v) {
+                    if (is_int($k)) {
+                        $col = (string)$v;
+                        $escaped = $this->escapeId($col);
+                        [$frag, $b] = UpsertValue::overwrite()->compile($driver, $this->table, $escaped);
+                        $setParts[] = "{$escaped} = {$frag}";
+                        $updateBindings = array_merge($updateBindings, $b);
                     } else {
-                        return "{$escaped} = VALUES({$escaped})";
+                        $escaped = $this->escapeId((string)$k);
+                        if ($v instanceof UpsertValue) {
+                            [$frag, $b] = $v->compile($driver, $this->table, $escaped);
+                            $setParts[] = "{$escaped} = {$frag}";
+                            $updateBindings = array_merge($updateBindings, $b);
+                        } elseif ($v instanceof RawExpression) {
+                            $setParts[] = "{$escaped} = {$v->expression}";
+                            $updateBindings = array_merge($updateBindings, $v->bindings);
+                        } else {
+                            $setParts[] = "{$escaped} = ?";
+                            $updateBindings[] = $v;
+                        }
                     }
-                }, $updateColumns));
-                
-                if ($driver === 'sqlite') {
+                }
+                $updateSets = implode(', ', $setParts);
+
+                if ($driver === 'mysql') {
+                    $sql = "INSERT INTO {$this->table} ({$escapedColumns}) VALUES {$placeholders}"
+                         . " ON DUPLICATE KEY UPDATE {$updateSets}";
+                } else {
                     $uniqueEscaped = implode(', ', array_map(fn($c) => $this->escapeId($c), $uniqueColumns));
                     $sql = "INSERT INTO {$this->table} ({$escapedColumns}) VALUES {$placeholders}"
                          . " ON CONFLICT ({$uniqueEscaped}) DO UPDATE SET {$updateSets}";
-                } else {
-                    $sql = "INSERT INTO {$this->table} ({$escapedColumns}) VALUES {$placeholders}"
-                         . " ON DUPLICATE KEY UPDATE {$updateSets}";
                 }
-                
+                $this->lastExecutedSql = $sql;
+
                 $bindings = [];
                 foreach ($batch as $row) {
                     foreach ($columns as $col) {
                         $bindings[] = $row[$col] ?? null;
                     }
                 }
-                
+                $bindings = array_merge($bindings, $updateBindings);
+
                 $stmt = $this->pdo->prepare($sql);
                 $stmt->execute($bindings);
                 return $stmt->rowCount();
             });
         }
-        
+
         return $totalAffected;
     }
     
@@ -1307,9 +1343,14 @@ class QueryBuilder
             $bindings = [];
             
             foreach ($data as $column => $value) {
-                // 转义列名防止注入
-                $sets[] = $this->escapeId($column) . " = ?";
-                $bindings[] = $value;
+                // 转义列名防止注入；支持 DB::raw(...) 原始原子表达式
+                if ($value instanceof RawExpression) {
+                    $sets[] = $this->escapeId($column) . ' = ' . $value->expression;
+                    $bindings = array_merge($bindings, $value->bindings);
+                } else {
+                    $sets[] = $this->escapeId($column) . " = ?";
+                    $bindings[] = $value;
+                }
             }
             
             $sql = "UPDATE {$this->table} SET " . implode(', ', $sets);

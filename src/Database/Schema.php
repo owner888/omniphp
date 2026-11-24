@@ -22,14 +22,9 @@ class Schema
         $sql = $blueprint->toSql();
         DB::execute($sql);
         
-        // 创建索引（toSql() 只生成 CREATE TABLE，索引需要单独执行）
+        // 创建索引（复用 createIndex 自带 hasIndex 幂等判断，重复执行不报错）
         foreach ($blueprint->getIndexes() as $idx) {
-            $type = $idx['unique'] ? 'UNIQUE INDEX' : 'INDEX';
-            $escapedIndexName = DB::escapeIdentifier($idx['name']);
-            $escapedTable = DB::escapeIdentifier($table);
-            $escapedColumns = implode(', ', array_map(fn($col) => DB::escapeIdentifier($col), $idx['columns']));
-            
-            DB::execute("CREATE {$type} {$escapedIndexName} ON {$escapedTable} ({$escapedColumns})");
+            self::createIndex($table, $idx['columns'], $idx['name'], (bool)$idx['unique']);
         }
     }
     
@@ -361,6 +356,140 @@ class Schema
     }
     
     /**
+     * 按唯一键去重历史重复数据（加唯一索引前的标准幂等清理助手，兼容 MySQL / SQLite）
+     *
+     * - 遵循 SQL UNIQUE 语义：若唯一列包含 NULL 行（如可空 email），NULL 行不视为重复、予以保留；
+     * - 支持在删除重复行前将指定列按 SUM / MIN / MAX 聚合合并到保留行上（如 crash_groups 的计数与首末时间）。
+     *
+     * @param string       $table           表名
+     * @param string|array $uniqueColumns   唯一键列名（单列或组合列）
+     * @param array        $mergeAggregates 需合并到保留行的聚合规则，如 ['total_count' => 'SUM', 'first_seen_at' => 'MIN']
+     * @param string       $keep            保留哪一行：'max'（默认，保留最新 id）或 'min'（保留最早 id）
+     * @param string       $idColumn        主键列名（默认 'id'）
+     * @return int 删除的重复行数
+     */
+    public static function deduplicate(
+        string $table,
+        string|array $uniqueColumns,
+        array $mergeAggregates = [],
+        string $keep = 'max',
+        string $idColumn = 'id'
+    ): int {
+        if (!self::hasTable($table)) {
+            return 0;
+        }
+
+        $pdo = DB::connection();
+        $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
+        $cols = array_values(is_array($uniqueColumns) ? $uniqueColumns : [$uniqueColumns]);
+        if (empty($cols)) {
+            return 0;
+        }
+
+        $keepFn = strtolower($keep) === 'min' ? 'MIN' : 'MAX';
+        $delOp  = $keepFn === 'MIN' ? '>' : '<';
+
+        $escapedTable = DB::escapeIdentifier($table);
+        $escapedId    = DB::escapeIdentifier($idColumn);
+        $escapedCols  = array_map(fn($c) => DB::escapeIdentifier($c), $cols);
+        $groupList    = implode(', ', $escapedCols);
+        $notNullWhere = implode(' AND ', array_map(fn($ec) => "{$ec} IS NOT NULL", $escapedCols));
+
+        // 1. 可选：将重复组的聚合值（SUM / MIN / MAX）合并写回保留行
+        $allowedAggs = ['SUM', 'MIN', 'MAX'];
+        $validAggs = [];
+        foreach ($mergeAggregates as $aggCol => $fn) {
+            $fnUpper = strtoupper((string)$fn);
+            if (in_array($fnUpper, $allowedAggs, true)) {
+                $validAggs[(string)$aggCol] = $fnUpper;
+            }
+        }
+
+        if (!empty($validAggs)) {
+            if ($driver === 'mysql') {
+                $selectAggs = ["{$keepFn}({$escapedId}) AS _keep_id"];
+                $setClauses = [];
+                $aliasIdx = 0;
+                foreach ($validAggs as $aggCol => $fnUpper) {
+                    $ec = DB::escapeIdentifier($aggCol);
+                    $alias = "_agg_{$aliasIdx}";
+                    $selectAggs[] = "{$fnUpper}({$ec}) AS {$alias}";
+                    $setClauses[] = "t.{$ec} = agg.{$alias}";
+                    $aliasIdx++;
+                }
+                $selectAggSql = implode(', ', $selectAggs);
+                $setSql = implode(', ', $setClauses);
+                DB::execute(
+                    "UPDATE {$escapedTable} t
+                     INNER JOIN (
+                         SELECT {$groupList}, {$selectAggSql}
+                         FROM {$escapedTable}
+                         WHERE {$notNullWhere}
+                         GROUP BY {$groupList}
+                         HAVING COUNT(*) > 1
+                     ) agg ON t.{$escapedId} = agg._keep_id
+                     SET {$setSql}"
+                );
+            } else {
+                $matchCond = implode(' AND ', array_map(
+                    fn($ec) => "g2.{$ec} = {$escapedTable}.{$ec}",
+                    $escapedCols
+                ));
+                $setClauses = [];
+                foreach ($validAggs as $aggCol => $fnUpper) {
+                    $ec = DB::escapeIdentifier($aggCol);
+                    $setClauses[] = "{$ec} = (SELECT {$fnUpper}(g2.{$ec}) FROM {$escapedTable} g2 WHERE {$matchCond})";
+                }
+                $setSql = implode(', ', $setClauses);
+                DB::execute(
+                    "UPDATE {$escapedTable}
+                     SET {$setSql}
+                     WHERE {$notNullWhere}
+                       AND {$escapedId} IN (
+                           SELECT _keep_id FROM (
+                               SELECT {$keepFn}({$escapedId}) AS _keep_id
+                               FROM {$escapedTable}
+                               WHERE {$notNullWhere}
+                               GROUP BY {$groupList}
+                               HAVING COUNT(*) > 1
+                           ) AS _dup_keepers
+                       )"
+                );
+            }
+        }
+
+        // 2. 删除非保留行的重复记录（MySQL 用派生表 JOIN 规避 1093 同表更新限制）
+        if ($driver === 'mysql') {
+            $joinConds = array_map(fn($ec) => "t1.{$ec} = agg.{$ec}", $escapedCols);
+            $joinConds[] = "t1.{$escapedId} {$delOp} agg._keep_id";
+            $joinSql = implode(' AND ', $joinConds);
+            return DB::execute(
+                "DELETE t1 FROM {$escapedTable} t1
+                 INNER JOIN (
+                     SELECT {$groupList}, {$keepFn}({$escapedId}) AS _keep_id
+                     FROM {$escapedTable}
+                     WHERE {$notNullWhere}
+                     GROUP BY {$groupList}
+                     HAVING COUNT(*) > 1
+                 ) agg ON {$joinSql}"
+            );
+        }
+
+        return DB::execute(
+            "DELETE FROM {$escapedTable}
+             WHERE {$notNullWhere}
+               AND {$escapedId} NOT IN (
+                   SELECT _keep_id FROM (
+                       SELECT {$keepFn}({$escapedId}) AS _keep_id
+                       FROM {$escapedTable}
+                       WHERE {$notNullWhere}
+                       GROUP BY {$groupList}
+                   ) AS _keepers
+               )"
+        );
+    }
+
+    /**
      * 检查索引是否存在
      */
     public static function hasIndex(string $table, string $indexName): bool
@@ -689,17 +818,23 @@ class Blueprint
     public function index(string|array $columns, ?string $name = null): self
     {
         $columns = is_array($columns) ? $columns : [$columns];
+        // 若相同列集合已声明过索引（如 ->unique()->index() 连写），跳过冗余普通索引
+        foreach ($this->indexes as $existing) {
+            if ($existing['columns'] === $columns) {
+                return $this;
+            }
+        }
         $name = $name ?? 'idx_' . implode('_', $columns);
-        
+
         $this->indexes[] = [
             'name' => $name,
             'columns' => $columns,
             'unique' => false,
         ];
-        
+
         return $this;
     }
-    
+
     /**
      * 添加唯一索引
      */
@@ -707,7 +842,17 @@ class Blueprint
     {
         $columns = is_array($columns) ? $columns : [$columns];
         $name = $name ?? 'uniq_' . implode('_', $columns);
-        
+
+        // 若相同列集合已有普通索引（如 ->index()->unique()），直接原地升级为唯一索引
+        foreach ($this->indexes as &$existing) {
+            if ($existing['columns'] === $columns) {
+                $existing['unique'] = true;
+                $existing['name'] = $name;
+                return $this;
+            }
+        }
+        unset($existing);
+
         $this->indexes[] = [
             'name' => $name,
             'columns' => $columns,
@@ -1006,11 +1151,17 @@ class Column
     }
     
     /**
-     * 唯一约束
+     * 唯一约束（委托给 Blueprint 创建唯一索引，与 Column::index() 一致）
+     *
+     * 用法: $table->string('email', 100)->unique()
+     *       $table->char('fingerprint', 32)->unique('uniq_crash_groups_fingerprint')
      */
-    public function unique(): self
+    public function unique(?string $name = null): self
     {
         $this->definition['unique'] = true;
+        if ($this->blueprint) {
+            $this->blueprint->unique($this->rawName, $name);
+        }
         return $this;
     }
     

@@ -519,7 +519,9 @@ Timer::add(300, function() {
 - ✅ INSERT
 - ✅ UPDATE
 - ✅ DELETE
-- ✅ INCREMENT / DECREMENT
+- ✅ INCREMENT / DECREMENT / `DB::raw()` 原子表达式更新
+- ✅ UPSERT（`upsert` / `upsertBatch`，内置跨驱动 `DB::upsertIncrement()` / `DB::upsertMin()` / `DB::upsertMax()`）
+- ✅ Schema 列级 `->unique()` 与迁移去重助手 `Schema::deduplicate()`
 - ✅ COUNT / EXISTS
 - ✅ 事务支持
 - ✅ SQL 防注入（预处理语句）

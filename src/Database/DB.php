@@ -519,4 +519,36 @@ class DB
     {
         return self::$logging;
     }
+
+    /**
+     * 构造原始 SQL 表达式（用于 update / upsert 等原子运算）
+     */
+    public static function raw(string $expression, array $bindings = []): RawExpression
+    {
+        return new RawExpression($expression, $bindings);
+    }
+
+    /** Upsert 冲突更新策略：原子累加（col = col + $amount） */
+    public static function upsertIncrement(int|float $amount = 1): UpsertValue
+    {
+        return UpsertValue::increment($amount);
+    }
+
+    /** Upsert 冲突更新策略：原子递减（col = col - $amount） */
+    public static function upsertDecrement(int|float $amount = 1): UpsertValue
+    {
+        return UpsertValue::decrement($amount);
+    }
+
+    /** Upsert 冲突更新策略：保留较小值（如 first_seen_at 只往前推） */
+    public static function upsertMin(): UpsertValue
+    {
+        return UpsertValue::min();
+    }
+
+    /** Upsert 冲突更新策略：保留较大值（如 last_seen_at 只往后推） */
+    public static function upsertMax(): UpsertValue
+    {
+        return UpsertValue::max();
+    }
 }
